@@ -1,0 +1,4 @@
+Candidate ID,Candidate Name,Application Received,KYC Started,KYC Completed,Security Review Started,Security Review Completed,Offer Accepted,Onboarding Completed,KYC SLA Days,Project Team
+C-1001,Asha Menon,2026-01-03,2026-01-04,2026-01-06,2026-01-07,2026-01-09,2026-01-10,2026-01-12,2,Payments
+C-1002,Daniel Roy,2026-01-05,2026-01-06,2026-01-08,2026-01-09,2026-01-13,2026-01-14,2026-01-16,2,Platform
+C-1003,Meera Shah,2026-01-08,2026-01-09,2026-01-11,2026-01-12,2026-01-15,2026-01-16,2026-01-18,2,Payments
