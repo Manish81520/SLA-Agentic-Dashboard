@@ -15,9 +15,18 @@ a confirmed, stable configuration that a deterministic backend can calculate.
 
 ```bash
 .venv/bin/python -m py_compile Agents/ExcelAnalyst/*.py
-.venv/bin/python -c "from Agents.ExcelAnalyst.tools import inspect_spreadsheet; print(inspect_spreadsheet()['total_rows'])"
+.venv/bin/python -c "from Agents.ExcelAnalyst.tools import inspect_spreadsheet; print(inspect_spreadsheet('Data/test_samples/candidate_standard.csv')['total_rows'])"
 ```
 
 The agent needs `GEMINI_API_KEY` or `GOOGLE_API_KEY` in `.env` only when
 running the Gemini interpretation step. Spreadsheet inspection and cleaning
 run locally.
+
+## CSV requirements
+
+- CSV dates must be calendar-valid `YYYY-MM-DD` (preferred) or `YYYY/MM/DD`.
+The inspector rejects every other date representation, including ambiguous
+values such as `06/06/2006`, before cleaning or agent analysis begins.
+
+- One stage should have start and end date. Example : Mac setup start date and Mac setup end date. This will not let agent to assume.
+

@@ -11,12 +11,25 @@ import pandas as pd
 
 
 try:
-    from .data_cleaner import clean_dataframe
+    from .data_cleaner import _is_mostly_numeric, clean_dataframe, is_supported_iso_date
 except ImportError:
     try:
-        from Agents.ExcelAnalyst.data_cleaner import clean_dataframe
+        from Agents.ExcelAnalyst.data_cleaner import _is_mostly_numeric, clean_dataframe, is_supported_iso_date
     except ImportError:
-        from .data_cleaner import clean_dataframe
+        from .data_cleaner import _is_mostly_numeric, clean_dataframe, is_supported_iso_date
+
+
+DATE_HEADER_KEYWORDS = (
+    "date", "time", "day", "initiated", "completed", "start", "end",
+    "opened", "verified", "accepted", "assigned", "submission",
+)
+MAX_DATE_VALIDATION_ISSUES = 20
+
+
+def _header_indicates_date(column_name: Any) -> bool:
+    """Return whether a header contains a standalone date-related word."""
+    header_words = set(re.findall(r"[a-z]+", str(column_name).lower()))
+    return bool(header_words.intersection(DATE_HEADER_KEYWORDS))
 
 
 def _find_default_data_file() -> Optional[Path]:
@@ -50,10 +63,40 @@ def _is_date_like(val_str: str) -> bool:
     return False
 
 
+def _validate_csv_date_formats(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Return unsupported date values found in a CSV without interpreting them."""
+    issues: List[Dict[str, Any]] = []
+    for column in df.columns:
+        series = df[column]
+        if _is_mostly_numeric(series):
+            continue
+
+        populated_values = series.dropna()
+        if populated_values.empty:
+            continue
+
+        values_as_text = populated_values.map(str).str.strip()
+        if not _header_indicates_date(column) and not values_as_text.map(_is_date_like).any():
+            continue
+
+        for row_index, value in values_as_text.items():
+            if is_supported_iso_date(value):
+                continue
+            issues.append({
+                "column": str(column),
+                "csv_row": int(row_index) + 2,
+                "value": value,
+                "reason": "Dates must be calendar-valid YYYY-MM-DD or YYYY/MM/DD.",
+            })
+            if len(issues) >= MAX_DATE_VALIDATION_ISSUES:
+                return issues
+    return issues
+
+
 def inspect_spreadsheet(file_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Inspects an Excel (.xlsx, .xls) or CSV (.csv) file, cleans it, and extracts
-    structural metadata.
+    structural metadata. CSV dates must use YYYY-MM-DD or YYYY/MM/DD.
 
     This tool reads the file using Pandas/openpyxl, runs it through the generic
     data-cleaning step, then gathers column details, sample values, data types,
@@ -101,6 +144,23 @@ def inspect_spreadsheet(file_path: Optional[str] = None) -> Dict[str, Any]:
     except Exception as exc:
         return {"error": f"Failed to read file '{target_path.name}': {str(exc)}"}
 
+    if file_type == "csv":
+        date_validation_issues = _validate_csv_date_formats(df)
+        if date_validation_issues:
+            return {
+                "error": (
+                    "CSV date validation failed. Dates must be provided as "
+                    "calendar-valid YYYY-MM-DD (preferred) or YYYY/MM/DD. "
+                    "The file was not processed; correct the CSV and try again."
+                ),
+                "file_name": target_path.name,
+                "file_path": str(target_path.resolve()),
+                "date_format_validation": {
+                    "required_formats": ["YYYY-MM-DD", "YYYY/MM/DD"],
+                    "issues": date_validation_issues,
+                },
+            }
+
     # Clean the raw data before analyzing it
     df, cleaning_report = clean_dataframe(df)
 
@@ -118,8 +178,7 @@ def inspect_spreadsheet(file_path: Optional[str] = None) -> Dict[str, Any]:
 
         unique_samples = [str(x).strip() for x in non_null_series.unique()[:5]]
 
-        name_lower = cleaned_name.lower()
-        has_date_keyword = any(kw in name_lower for kw in ["date", "time", "day", "initiated", "completed"])
+        has_date_keyword = _header_indicates_date(cleaned_name)
         samples_look_like_dates = any(_is_date_like(s) for s in unique_samples)
         is_potential_date = has_date_keyword or samples_look_like_dates
 

@@ -9,12 +9,38 @@ Like tools.py, this module knows nothing about specific column names or
 onboarding stages — it stays generic across different client spreadsheets.
 """
 
+import re
+from datetime import datetime
 from typing import Any, Dict, Tuple
 import pandas as pd
 
 NULL_LIKE_TOKENS = {"", "na", "n/a", "null", "none", "-", "nil", "nan"}
 DATE_NAME_KEYWORDS = ("date", "time", "day")
 NUMERIC_COLUMN_THRESHOLD = 0.8
+ISO_DATE_PATTERN = re.compile(r"^\d{4}([-/])\d{2}\1\d{2}$")
+
+
+def is_supported_iso_date(value: Any) -> bool:
+    """Return whether a value is a calendar-valid supported CSV date.
+
+    Dates are accepted only when the year appears first, as ``YYYY-MM-DD`` or
+    ``YYYY/MM/DD``. Parsing is deliberately format-specific so this helper can
+    never infer whether a value such as ``06/06/2006`` is day-first or
+    month-first.
+    """
+    if not isinstance(value, str):
+        return False
+
+    match = ISO_DATE_PATTERN.fullmatch(value.strip())
+    if not match:
+        return False
+
+    date_format = "%Y-%m-%d" if match.group(1) == "-" else "%Y/%m/%d"
+    try:
+        datetime.strptime(value.strip(), date_format)
+    except ValueError:
+        return False
+    return True
 
 
 def _is_mostly_numeric(series: pd.Series) -> bool:
@@ -47,10 +73,8 @@ def clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
       3. Strip whitespace from string cell values.
       4. Drop fully-empty rows.
       5. Drop exact duplicate rows (keeps first occurrence).
-      6. Parse columns that look date-like into a consistent YYYY-MM-DD format,
-         but only commit the parse if it succeeds for at least 80% of that
-         column's non-null values - otherwise the column is left untouched
-         rather than guessing.
+      6. Canonicalize already-valid ISO-style date columns to YYYY-MM-DD.
+         This function never infers a day/month ordering.
     """
     report: Dict[str, Any] = {
         "original_shape": list(df.shape),
@@ -100,24 +124,22 @@ def clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     report["duplicate_rows_dropped"] = int(duplicate_mask.sum())
     df = df[~duplicate_mask]
 
-    # 6. Parse date-like columns into a consistent format
+    # 6. Canonicalize only explicit ISO-style dates. CSV validation happens
+    # before this function is called; this guard also keeps direct callers from
+    # accidentally applying an inferred date convention.
     for col in df.columns:
         name_lower = col.lower()
         looks_date_named = any(kw in name_lower for kw in DATE_NAME_KEYWORDS)
         if not looks_date_named or _is_mostly_numeric(df[col]):
             continue
 
-        non_null_count = df[col].notna().sum()
-        if non_null_count == 0:
+        if df[col].notna().sum() == 0:
             continue
 
-        # ``format='mixed'`` supports a column containing legitimate
-        # day-first date formats such as 05-08-2026 and 10/8/2026.
-        parsed = pd.to_datetime(df[col], format="mixed", errors="coerce", dayfirst=True)
-        success_count = parsed.notna().sum()
-
-        if (success_count / non_null_count) >= 0.8:
-            df[col] = parsed.dt.strftime("%Y-%m-%d").where(parsed.notna(), df[col])
+        non_null_values = df.loc[df[col].notna(), col]
+        if non_null_values.map(is_supported_iso_date).all():
+            parsed = pd.to_datetime(non_null_values, format="mixed", errors="raise")
+            df.loc[non_null_values.index, col] = parsed.dt.strftime("%Y-%m-%d")
             report["columns_parsed_as_dates"].append(col)
         else:
             report["columns_skipped_date_parse"].append(col)
