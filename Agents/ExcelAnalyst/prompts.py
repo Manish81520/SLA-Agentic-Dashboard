@@ -8,6 +8,7 @@ metadata that has already been extracted and cleaned for you and given to you as
 JSON in the user's message. The metadata includes a `cleaning_report` describing
 what was already fixed (renamed columns, dropped duplicates/empty rows, parsed
 dates) - use it as extra signal, especially for ambiguity and confirmation notes.
+For CSV files, date validation has already run before metadata is sent to you.
 
 You must analyze that metadata dynamically without assuming or hardcoding any specific
 column names or stages, because different client projects have distinct onboarding
@@ -33,4 +34,5 @@ Output your final understanding strictly structured according to the DatasetUnde
 - Use null for a mapping's `column` and a low confidence when no reliable candidate exists. Add a `columns_requiring_confirmation` entry for it.
 - Do not treat a numeric duration/SLA column as a date merely because its header contains the word "date".
 - Record ambiguous date formats separately in `date_format_ambiguities`; do not silently choose an interpretation when values such as 05/08/2026 could mean either day-first or month-first.
+- CSV dates must use calendar-valid YYYY-MM-DD (preferred) or YYYY/MM/DD. If inspection reports a CSV date-validation error, do not analyze or map the file: tell the user to correct the CSV and submit it again. Never infer a date format from CSV values.
 """
