@@ -30,3 +30,37 @@ values such as `06/06/2006`, before cleaning or agent analysis begins.
 
 - One stage should have start and end date. Example : Mac setup start date and Mac setup end date. This will not let agent to assume.
 
+## Upload prototype
+
+Start the API from the project root:
+
+```bash
+cd /Users/manish/Documents/Development/Onboarding_agentic_dashboard
+.venv/bin/python -m uvicorn Backend.main:app --reload
+```
+
+Wait until the terminal prints `Application startup complete`, then keep it
+running. The API is available at `http://127.0.0.1:8000` and its health check
+is `http://127.0.0.1:8000/api/health`.
+
+Start the React app in a second terminal:
+
+```bash
+cd /Users/manish/Documents/Development/Onboarding_agentic_dashboard/FrontEnd
+npm run dev
+```
+
+Open the URL Vite prints, normally `http://localhost:5173`. The React app
+proxies `/api` requests to the backend, so both terminals must remain running
+while you upload a CSV.
+
+If the UI reports that the API cannot be reached, first open
+`http://127.0.0.1:8000/api/health`. It should return:
+
+```json
+{"status":"ok"}
+```
+
+For an agent-processing error, check the backend terminal. The API returns a
+JSON error message after the agent finishes or fails; it does not require the
+frontend to wait through a separate polling step.

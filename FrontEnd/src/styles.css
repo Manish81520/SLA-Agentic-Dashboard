@@ -1,0 +1,71 @@
+:root {
+    font-family: Inter, system-ui, sans-serif;
+    color: #172033;
+    background: #f4f7fb;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    overflow-x: hidden;
+}
+
+.page {
+    display: grid;
+    min-height: 100vh;
+    padding: 2rem;
+    place-items: center;
+    justify-items: center;
+}
+
+.card {
+    width: min(100%, 42rem);
+    padding: 2rem;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgb(23 32 51 / 12%);
+}
+
+form {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+input {
+    padding: 0.5rem;
+}
+
+button {
+    width: fit-content;
+    padding: 0.65rem 1rem;
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.error {
+    color: #b42318;
+    margin: 0;
+}
+
+.result-card {
+    width: min(100%, 60rem);
+}
+
+pre {
+    overflow: auto;
+    padding: 1rem;
+    background: #f4f7fb;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
+}
