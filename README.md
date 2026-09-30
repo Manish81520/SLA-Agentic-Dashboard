@@ -64,3 +64,27 @@ If the UI reports that the API cannot be reached, first open
 For an agent-processing error, check the backend terminal. The API returns a
 JSON error message after the agent finishes or fails; it does not require the
 frontend to wait through a separate polling step.
+
+## Generic calculation engine
+
+The backend calculation engine is deliberately independent of source headers.
+After `ExcelAnalyst` maps the identifier, optional group and completion fields,
+and ordered stages, the API returns calculations derived from those mappings.
+
+- A stage uses its mapped numeric duration field when present; otherwise its
+  mapped ISO start/end dates determine elapsed days.
+- Per-stage metrics: average, sample standard deviation, minimum, maximum,
+  tracked count, and an anomaly cutoff of `average + 1 × standard deviation`.
+- Anomalies exceed that cutoff. Incomplete records become focus areas from
+  75% of the stage average through the cutoff.
+- Per-group averages and deviations from the global stage average, dynamic
+  categorical filters, record-level stage trends, and current-stage forecasts
+  are calculated in the backend.
+- Invalid numeric values, invalid/negative dates, values above 365 days,
+  missing data, zero averages, and duplicate normalized headers are handled
+  without frontend calculation logic.
+
+`POST /api/uploads/csv` (and the compatibility alias `POST /api/upload`) now
+returns both the agent mapping and a `calculations` object. For an uploaded
+dataset, `GET /api/calculations`, `GET /api/summary`, `GET /api/candidates`,
+and `GET /api/dataset-info` expose the generic calculated result.

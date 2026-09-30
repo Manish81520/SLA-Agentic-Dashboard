@@ -16,7 +16,10 @@ class UploadApiTests(unittest.IsolatedAsyncioTestCase):
             received_path = file_path
             with open(file_path, encoding="utf-8") as uploaded_file:
                 self.assertEqual(uploaded_file.read(), "Employee ID,Request Date\nE-1,2026-01-01\n")
-            return {"entity_type": "employee"}
+            return {
+                "identifier_mapping": {"column": "Employee ID"},
+                "stages": [{"stage_name": "Request", "duration_mapping": None, "start_mapping": {"column": "Request Date"}}],
+            }
 
         upload = UploadFile(
             filename="onboarding.csv",
@@ -24,7 +27,8 @@ class UploadApiTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await process_csv_upload(upload, fake_agent_runner)
 
-        self.assertEqual(result, {"entity_type": "employee"})
+        self.assertEqual(result["agent"]["identifier_mapping"]["column"], "Employee ID")
+        self.assertEqual(result["calculations"]["kpis"]["totalRecords"], 1)
         self.assertIsNotNone(received_path)
         self.assertFalse(Path(received_path).exists())
 
