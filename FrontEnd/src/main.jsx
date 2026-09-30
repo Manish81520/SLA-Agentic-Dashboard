@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import HomePage from "./pages/HomePage";
 import UploadPage from "./pages/UploadPage";
 import "./index.css";
 
@@ -10,7 +11,7 @@ function ResultPage() {
   const response = location.state?.response;
 
   if (!response) {
-    return <Navigate replace to="/" />;
+    return <Navigate replace to="/home" />;
   }
 
   return (
@@ -19,7 +20,9 @@ function ResultPage() {
         <p className="up-eyebrow">Analysis complete</p>
         <h1>ExcelAnalyst response</h1>
         <pre className="up-result-json">{JSON.stringify(response, null, 2)}</pre>
-        <button className="up-secondary-button" onClick={() => navigate("/")}>Upload another CSV</button>
+        <button className="up-secondary-button" onClick={() => navigate("/home")}>
+          ← Back to Dashboard
+        </button>
       </section>
     </main>
   );
@@ -28,8 +31,13 @@ function ResultPage() {
 function App() {
   return (
     <Routes>
-      <Route element={<UploadPage />} path="/" />
-      <Route element={<ResultPage />} path="/result" />
+      {/* Default → Home */}
+      <Route index element={<Navigate replace to="/home" />} />
+      <Route path="/home" element={<HomePage />} />
+      <Route path="/upload" element={<UploadPage />} />
+      <Route path="/result" element={<ResultPage />} />
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate replace to="/home" />} />
     </Routes>
   );
 }

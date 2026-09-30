@@ -143,6 +143,17 @@ export default function UploadPage() {
 
     return (
         <main className="up-page">
+            <div className="up-back-nav">
+                <button
+                    type="button"
+                    className="up-back-btn"
+                    onClick={() => navigate("/home")}
+                    aria-label="Back to Dashboard"
+                >
+                    ← Dashboard
+                </button>
+            </div>
+
             <Stepper current={isProcessing ? 2 : 1} />
 
             <header className="up-header">
