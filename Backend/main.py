@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from Agents.ExcelAnalyst.agent import run_excel_analyst_async
-from Backend.calculations import calculate_dataset
+from Backend.calculations import calculate_dataset, calculate_pipeline
 
 
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
@@ -31,9 +31,9 @@ CURRENT_DATASET: LoadedDataset | None = None
 app = FastAPI(title="Onboarding SLA Dashboard API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -130,6 +130,18 @@ async def get_summary(request: Request) -> Dict[str, Any]:
     calculations["groupColumn"] = calculations["configuration"]["groupColumn"]
     calculations["dataset"] = {"filename": CURRENT_DATASET.filename}
     return calculations
+
+
+@app.get("/api/pipeline")
+async def get_pipeline(request: Request) -> Dict[str, Any]:
+    """Return the 3-step onboarding pipeline roll-up for the active dataset."""
+    if CURRENT_DATASET is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No dataset is loaded. Upload a CSV first.",
+        )
+    filters = {key: value for key, value in request.query_params.items() if value}
+    return calculate_pipeline(CURRENT_DATASET.dataframe, CURRENT_DATASET.agent_response, filters)
 
 
 @app.get("/api/candidates")

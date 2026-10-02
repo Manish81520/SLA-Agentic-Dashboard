@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from Backend.pipeline_config import VALID_MAIN_STAGE_IDS
+from .normalization import normalize_header
+
 
 @dataclass(frozen=True)
 class StageDefinition:
@@ -12,6 +15,7 @@ class StageDefinition:
     duration_column: Optional[str]
     start_column: Optional[str]
     end_column: Optional[str]
+    main_stage: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -26,11 +30,36 @@ class CalculationConfiguration:
 
 
 def _mapping_column(mapping: Any) -> Optional[str]:
-    """Read a schema ColumnMapping without trusting an arbitrary response shape."""
+    """Read a schema ColumnMapping without trusting an arbitrary response shape.
+
+    The header is passed through the same whitespace normalization the engine
+    applies to the dataframe, so a header such as "Onboarding  Documents ..."
+    (double space) still resolves to its column instead of being silently dropped.
+    """
     if not isinstance(mapping, dict):
         return None
     column = mapping.get("column")
-    return column if isinstance(column, str) and column.strip() else None
+    if isinstance(column, str) and column.strip():
+        return normalize_header(column)
+    return None
+
+
+def _main_stage_id(mapping: Any) -> Optional[str]:
+    """Extract and validate the fixed main stage ID from main_stage_mapping."""
+    if isinstance(mapping, str):
+        val = mapping.strip()
+        return val if val in VALID_MAIN_STAGE_IDS else None
+    if not isinstance(mapping, dict):
+        return None
+    val = (
+        mapping.get("stage_id")
+        or mapping.get("column")
+        or mapping.get("id")
+        or mapping.get("main_stage")
+    )
+    if isinstance(val, str) and val.strip() in VALID_MAIN_STAGE_IDS:
+        return val.strip()
+    return None
 
 
 def configuration_from_agent(agent_response: Dict[str, Any]) -> CalculationConfiguration:
@@ -57,6 +86,7 @@ def configuration_from_agent(agent_response: Dict[str, Any]) -> CalculationConfi
                 duration_column=_mapping_column(raw_stage.get("duration_mapping")),
                 start_column=_mapping_column(raw_stage.get("start_mapping")),
                 end_column=_mapping_column(raw_stage.get("end_mapping")),
+                main_stage=_main_stage_id(raw_stage.get("main_stage_mapping")),
             )
         )
 

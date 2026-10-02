@@ -6,8 +6,9 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
 
+from Backend.pipeline_config import FIXED_MAIN_STAGES, VALID_MAIN_STAGE_IDS
 from .configuration import CalculationConfiguration, StageDefinition, configuration_from_agent
-from .normalization import coerce_duration, json_value, normalize_dataframe, parse_iso_date, rounded
+from .normalization import coerce_duration, json_value, normalize_dataframe, parse_iso_date, rounded, rounded_decimal
 
 
 ANOMALY_Z_SCORE = 1.0
@@ -16,6 +17,19 @@ FOCUS_AREA_RATIO = 0.75
 
 def _available_column(column: Optional[str], dataframe: pd.DataFrame) -> Optional[str]:
     return column if column in dataframe.columns else None
+
+
+def _unresolved_columns(configuration: CalculationConfiguration, dataframe: pd.DataFrame) -> List[str]:
+    """Columns the agent mapped that do not exist in the data (otherwise silently ignored)."""
+    mapped: List[Optional[str]] = [
+        configuration.identifier_column,
+        configuration.group_column,
+        configuration.onboarding_start_column,
+        configuration.completion_column,
+    ]
+    for stage in configuration.stages:
+        mapped.extend([stage.duration_column, stage.start_column, stage.end_column])
+    return sorted({column for column in mapped if column and column not in dataframe.columns})
 
 
 def _stage_values(
@@ -260,19 +274,30 @@ def calculate_dataset(
 
     watchlist.sort(key=lambda item: item.pop("_sort"), reverse=True)
     focus_areas.sort(key=lambda item: item.pop("_sort"), reverse=True)
+
+    # Total onboarding duration: completed records only.
+    #   1. Preferred: completion date - onboarding start date.
+    #   2. Fallback (no start date): sum of stage values, but only when EVERY
+    #      stage has a value, so partial sums never distort min/avg.
+    # 0-day onboardings are valid and are kept.
     total_duration_values: List[Optional[float]] = []
     onboarding_start_column = _available_column(configuration.onboarding_start_column, dataframe)
     for index, row in dataframe.iterrows():
+        total: Optional[float] = None
         start, _ = parse_iso_date(row[onboarding_start_column]) if onboarding_start_column else (None, "missing")
         completion, _ = parse_iso_date(row[completion_column]) if completion_column else (None, "missing")
-        if start is not None and completion is not None:
-            value, _ = coerce_duration((completion - start).days)
-            total_duration_values.append(value)
-            continue
-        stage_total = sum(stage_data[stage.label].loc[index] for stage in configuration.stages if pd.notna(stage_data[stage.label].loc[index]))
-        total_duration_values.append(float(stage_total) if stage_total else None)
-    total_duration = pd.Series(total_duration_values, dtype="Float64")
-    total_duration = total_duration.where(total_duration > 0, pd.NA)
+
+        if completion is not None:  # only completed onboardings count
+            if start is not None:
+                total, _ = coerce_duration((completion - start).days)
+            else:
+                stage_vals = [stage_data[stage.label].loc[index] for stage in configuration.stages]
+                if all(pd.notna(v) for v in stage_vals):
+                    total, _ = coerce_duration(float(sum(stage_vals)))
+        total_duration_values.append(total)
+
+    total_duration = pd.Series(total_duration_values, index=dataframe.index, dtype="Float64")
+
     data_quality_issues = sum(
         sum(count for reason, count in issues.items() if reason != "missing")
         for issues in stage_quality.values()
@@ -282,6 +307,30 @@ def calculate_dataset(
         [configuration.identifier_column, configuration.completion_column, *[stage.duration_column for stage in configuration.stages], *[stage.start_column for stage in configuration.stages], *[stage.end_column for stage in configuration.stages]],
     )
 
+    pipeline = calculate_pipeline_from_data(dataframe, configuration, stage_data, stage_stats)
+    stage_groups: List[Dict[str, Any]] = []
+    for main_stage in pipeline["mainStages"]:
+        stage_groups.append({
+            "id": main_stage["id"],
+            "name": main_stage["label"],
+            "label": main_stage["label"],
+            "order": main_stage["order"],
+            "average": main_stage["averageDays"],
+            "averageDays": main_stage["averageDays"],
+            "trackedCount": main_stage["trackedCount"],
+            "subStages": main_stage["subStages"],
+        })
+    if "unassigned" in pipeline:
+        stage_groups.append({
+            "id": "unassigned",
+            "name": "Unassigned",
+            "label": "Unassigned",
+            "order": len(stage_groups) + 1,
+            "average": None,
+            "averageDays": None,
+            "subStages": pipeline["unassigned"]["subStages"],
+        })
+
     return {
         "schemaVersion": "1.0",
         "configuration": {
@@ -289,7 +338,10 @@ def calculate_dataset(
             "groupColumn": group_column,
             "onboardingStartColumn": onboarding_start_column,
             "completionColumn": completion_column,
-            "stages": [{"label": stage.label, "durationColumn": stage.duration_column, "startColumn": stage.start_column, "endColumn": stage.end_column} for stage in configuration.stages],
+            "stages": [{"label": stage.label, "durationColumn": stage.duration_column, "startColumn": stage.start_column, "endColumn": stage.end_column, "mainStage": stage.main_stage} for stage in configuration.stages],
+            # Agent-mapped columns that were not found in the data. Non-empty means
+            # a mapping silently failed and should be reviewed.
+            "unresolvedColumns": _unresolved_columns(configuration, full_dataframe),
         },
         "kpis": {
             "totalRecords": int(len(dataframe)),
@@ -301,7 +353,7 @@ def calculate_dataset(
             "dataQualityIssues": data_quality_issues,
         },
         "stages": stage_summaries,
-        "stageGroups": [{"name": stage["label"], "average": stage["average"], "anomalyCount": stage["anomalyCount"], "subStages": [stage]} for stage in stage_summaries],
+        "stageGroups": stage_groups,
         "byGroup": by_group,
         "filters": filters_available,
         "activeFilters": filters,
@@ -310,3 +362,106 @@ def calculate_dataset(
         "focusAreas": focus_areas,
         "dataQuality": stage_quality,
     }
+
+
+def _substage_summary(
+    stage: StageDefinition,
+    stage_data: Dict[str, pd.Series],
+    stage_stats: Dict[str, Dict[str, Optional[float]]],
+) -> tuple[Dict[str, Any], Optional[float]]:
+    """Return the response row for one substage plus its UNROUNDED average."""
+    raw_average = stage_stats.get(stage.label, {}).get("average")
+    tracked = int(stage_data[stage.label].notna().sum()) if stage.label in stage_data else 0
+    return (
+        {
+            "label": stage.label,
+            "averageDays": rounded_decimal(raw_average, 1),
+            "trackedCount": tracked,
+        },
+        raw_average,
+    )
+
+
+def calculate_pipeline_from_data(
+    dataframe: pd.DataFrame,
+    configuration: CalculationConfiguration,
+    stage_data: Dict[str, pd.Series],
+    stage_stats: Dict[str, Dict[str, Optional[float]]],
+) -> Dict[str, Any]:
+    """Roll up substages into the three fixed main pipeline stages.
+
+    - Main-stage average days = SUM of its substages' UNROUNDED average days,
+      rounded once at the end (summing already-rounded values would drift).
+      Substages with no tracked data are skipped; if none have data, the
+      average is null.
+    - Substages keep the order the agent returned them in.
+    - Substages with no valid main stage go into an extra "Unassigned" group,
+      shown last and only if non-empty.
+    - Always return the three main stages in fixed order, even if one has no
+      substages (empty list, null average).
+    - Pipeline averages are returned with one decimal place.
+    """
+    main_stages_result: List[Dict[str, Any]] = []
+
+    for main_cfg in FIXED_MAIN_STAGES:
+        matching_stages = [
+            stage for stage in configuration.stages if stage.main_stage == main_cfg.id
+        ]
+        sub_stages: List[Dict[str, Any]] = []
+        raw_averages: List[float] = []
+        for stage in matching_stages:
+            summary, raw_average = _substage_summary(stage, stage_data, stage_stats)
+            sub_stages.append(summary)
+            if raw_average is not None:
+                raw_averages.append(raw_average)
+
+        main_avg = rounded_decimal(sum(raw_averages), 1) if raw_averages else None
+
+        main_tracked = 0
+        if matching_stages and not dataframe.empty:
+            tracked_frame = pd.concat(
+                [stage_data[stage.label] for stage in matching_stages if stage.label in stage_data],
+                axis=1,
+            )
+            main_tracked = int(tracked_frame.notna().any(axis=1).sum()) if not tracked_frame.empty else 0
+
+        main_stages_result.append({
+            "id": main_cfg.id,
+            "label": main_cfg.label,
+            "order": main_cfg.order,
+            "averageDays": main_avg,
+            "trackedCount": main_tracked,
+            "subStages": sub_stages,
+        })
+
+    unassigned_sub_stages = [
+        _substage_summary(stage, stage_data, stage_stats)[0]
+        for stage in configuration.stages
+        if stage.main_stage not in VALID_MAIN_STAGE_IDS
+    ]
+
+    response: Dict[str, Any] = {"mainStages": main_stages_result}
+    if unassigned_sub_stages:
+        response["unassigned"] = {"subStages": unassigned_sub_stages}
+    return response
+
+
+def calculate_pipeline(
+    dataframe: pd.DataFrame,
+    agent_response: Dict[str, Any],
+    filters: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Calculate the 3-step onboarding pipeline roll-up."""
+    full_dataframe = normalize_dataframe(dataframe)
+    configuration: CalculationConfiguration = configuration_from_agent(agent_response)
+    filters = filters or {}
+    dataframe = _apply_filters(full_dataframe, filters)
+
+    stage_data: Dict[str, pd.Series] = {}
+    stage_stats: Dict[str, Dict[str, Optional[float]]] = {}
+    for stage in configuration.stages:
+        values, _, _ = _stage_values(dataframe, stage)
+        stage_data[stage.label] = values
+        stage_stats[stage.label] = _stage_statistics(values)
+
+    return calculate_pipeline_from_data(dataframe, configuration, stage_data, stage_stats)

@@ -10,7 +10,8 @@ import pandas as pd
 
 MIN_PLAUSIBLE_DAYS = 0
 MAX_PLAUSIBLE_DAYS = 365
-NULL_LIKE_VALUES = {"", "na", "n/a", "null", "none", "nan"}
+# Kept identical to data_cleaner.NULL_LIKE_TOKENS so cleaning and calculation agree.
+NULL_LIKE_VALUES = {"", "na", "n/a", "null", "none", "-", "nil", "nan"}
 
 
 def normalize_header(value: Any) -> str:
@@ -28,9 +29,21 @@ def normalize_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def _is_missing(value: Any) -> bool:
+    """True for None, NaN, pd.NA/NaT, and null-like text such as 'NA' or '-'."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in NULL_LIKE_VALUES
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
 def coerce_duration(value: Any) -> tuple[Optional[float], Optional[str]]:
     """Return a plausible day count or a reason it cannot be used."""
-    if value is None or (isinstance(value, str) and value.strip().lower() in NULL_LIKE_VALUES):
+    if _is_missing(value):
         return None, "missing"
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     if pd.isna(numeric) or not math.isfinite(float(numeric)):
@@ -43,7 +56,7 @@ def coerce_duration(value: Any) -> tuple[Optional[float], Optional[str]]:
 
 def parse_iso_date(value: Any) -> tuple[Optional[datetime], Optional[str]]:
     """Parse only the project's accepted year-first CSV date formats."""
-    if value is None or (isinstance(value, str) and value.strip().lower() in NULL_LIKE_VALUES):
+    if _is_missing(value):
         return None, "missing"
     if isinstance(value, datetime):
         return value, None
@@ -72,3 +85,10 @@ def json_value(value: Any) -> Any:
 def rounded(value: Optional[float]) -> Optional[int]:
     """Apply the reference dashboard's whole-number response policy."""
     return None if value is None or pd.isna(value) else int(round(float(value)))
+
+
+def rounded_decimal(value: Optional[float], decimals: int = 1) -> Optional[float]:
+    """Round to specified decimal places without converting None/NaN to 0."""
+    if value is None or pd.isna(value):
+        return None
+    return round(float(value), decimals)

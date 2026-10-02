@@ -115,7 +115,7 @@ export default function UploadPage() {
             const isJson = (response.headers.get("content-type") || "").includes("application/json");
             const payload = isJson ? await response.json() : {};
             if (!response.ok) throw new Error(payload.detail || "The upload could not be processed.");
-            navigate("/result", { state: { response: payload } });
+            navigate("/home", { state: { uploaded: true, response: payload, filename: file.name } });
         } catch (err) {
             setError(
                 err instanceof TypeError
