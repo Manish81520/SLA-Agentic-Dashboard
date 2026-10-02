@@ -1,0 +1,19 @@
+@import "@fontsource-variable/geist";
+
+:root {
+  font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  color: #eaf0ff;
+  background: #07101f;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}

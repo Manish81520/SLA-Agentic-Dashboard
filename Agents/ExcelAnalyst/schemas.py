@@ -53,6 +53,29 @@ class ConfirmationRequirement(BaseModel):
     reason: str = Field(description="Why this decision cannot be safely automated")
 
 
+class MainStageMapping(BaseModel):
+    """A proposed assignment of a substage to one of the fixed main pipeline stages."""
+
+    stage_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "One of the three fixed main-stage IDs: "
+            "'resource_fulfilment_to_identification', "
+            "'identification_to_onboarding', "
+            "'onboarding_to_billing', "
+            "or null when no reliable mapping exists"
+        ),
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence in this main stage assignment from 0.0 to 1.0",
+    )
+    rationale: str = Field(
+        description="Brief evidence for the main stage assignment, based only on the substage semantics and metadata",
+    )
+
+
 class OnboardingStage(BaseModel):
     """A proposed onboarding milestone with explicit, reviewable source mappings."""
 
@@ -70,6 +93,10 @@ class OnboardingStage(BaseModel):
     duration_mapping: Optional[ColumnMapping] = Field(
         default=None,
         description="Mapping to an existing numeric duration/SLA-value column, if the source provides one",
+    )
+    main_stage_mapping: Optional[MainStageMapping] = Field(
+        default=None,
+        description="Assignment of this substage to one of the three fixed main pipeline stages",
     )
     description: Optional[str] = Field(
         default=None,

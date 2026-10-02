@@ -19,6 +19,7 @@ if __package__:
         ConfirmationRequirement,
         DatasetUnderstanding,
         DateFormatAmbiguity,
+        MainStageMapping,
         OnboardingStage,
     )
     from .tools import inspect_spreadsheet
@@ -35,6 +36,7 @@ else:
         ConfirmationRequirement,
         DatasetUnderstanding,
         DateFormatAmbiguity,
+        MainStageMapping,
         OnboardingStage,
     )
     from Agents.ExcelAnalyst.tools import inspect_spreadsheet
