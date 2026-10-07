@@ -23,6 +23,7 @@ def _unresolved_columns(configuration: CalculationConfiguration, dataframe: pd.D
     """Columns the agent mapped that do not exist in the data (otherwise silently ignored)."""
     mapped: List[Optional[str]] = [
         configuration.identifier_column,
+        configuration.partner_name_column,
         configuration.group_column,
         configuration.onboarding_start_column,
         configuration.completion_column,
@@ -335,6 +336,7 @@ def calculate_dataset(
         "schemaVersion": "1.0",
         "configuration": {
             "identifierColumn": identifier_column,
+            "partnerNameColumn": _available_column(configuration.partner_name_column, dataframe),
             "groupColumn": group_column,
             "onboardingStartColumn": onboarding_start_column,
             "completionColumn": completion_column,
@@ -361,6 +363,143 @@ def calculate_dataset(
         "anomalyWatchlist": watchlist,
         "focusAreas": focus_areas,
         "dataQuality": stage_quality,
+    }
+
+
+def calculate_team_comparison(
+    dataframe: pd.DataFrame,
+    agent_response: Dict[str, Any],
+    stage_label: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return a stage-specific, team comparison with partner-level focus data.
+
+    Team and partner names are read from the ExcelAnalyst mappings.  This
+    deliberately keeps averages, comparison status, and anomaly thresholds out
+    of the UI so the response stays correct for any uploaded dataset.
+    """
+    normalized_dataframe = normalize_dataframe(dataframe)
+    configuration = configuration_from_agent(agent_response)
+    if not configuration.stages:
+        raise ValueError("ExcelAnalyst did not provide any stage mappings for comparison.")
+
+    stages_by_label = {stage.label: stage for stage in configuration.stages}
+    selected_stage = stages_by_label.get(stage_label) if stage_label else configuration.stages[0]
+    if selected_stage is None:
+        raise ValueError("The requested stage is not available in the active dataset.")
+
+    selected_values, selected_quality, _ = _stage_values(normalized_dataframe, selected_stage)
+    selected_stats = _stage_statistics(selected_values)
+    overall_average = selected_stats["average"]
+    anomaly_cutoff = selected_stats["anomalyCutoff"]
+
+    group_column = _available_column(configuration.group_column, normalized_dataframe)
+    partner_name_column = _available_column(configuration.partner_name_column, normalized_dataframe)
+    completion_column = _available_column(configuration.completion_column, normalized_dataframe)
+    stage_values = {
+        stage.label: _stage_values(normalized_dataframe, stage)[0]
+        for stage in configuration.stages
+    }
+
+    valid_indices = selected_values[selected_values.notna()].index
+    team_values: Dict[str, List[float]] = {}
+    partners: List[Dict[str, Any]] = []
+    attention_count = 0
+    approaching_average_count = 0
+    anomaly_count = 0
+    missing_partner_names = 0
+
+    for row_number, row_index in enumerate(valid_indices, start=1):
+        row = normalized_dataframe.loc[row_index]
+        value = float(selected_values.loc[row_index])
+        team_value = json_value(row[group_column]) if group_column else None
+        team = str(team_value).strip() if team_value is not None and str(team_value).strip() else "Unspecified"
+        partner_value = json_value(row[partner_name_column]) if partner_name_column else None
+        partner_name = str(partner_value).strip() if partner_value is not None and str(partner_value).strip() else None
+
+        current_stage = next(
+            (
+                stage.label
+                for stage in reversed(configuration.stages)
+                if pd.notna(stage_values[stage.label].loc[row_index])
+            ),
+            selected_stage.label,
+        )
+        difference = None if overall_average is None else value - overall_average
+        is_complete = _is_complete(row, completion_column)
+        is_active_stage = current_stage == selected_stage.label
+        approaching_threshold = None if overall_average is None else FOCUS_AREA_RATIO * overall_average
+        is_approaching = bool(
+            not is_complete
+            and is_active_stage
+            and approaching_threshold is not None
+            and value >= approaching_threshold
+        )
+        is_anomaly = bool(anomaly_cutoff is not None and value > anomaly_cutoff)
+
+        team_values.setdefault(team, []).append(value)
+        if not is_approaching:
+            continue
+        attention_count += 1
+        if value < overall_average:
+            approaching_average_count += 1
+        if is_anomaly:
+            anomaly_count += 1
+        if partner_name is None:
+            missing_partner_names += 1
+            continue
+        partners.append({
+            "partnerName": partner_name,
+            "team": team,
+            "currentStage": current_stage,
+            "stuckAtStage": current_stage,
+            "onboardingStatus": "In progress",
+            "actualOnboardingDays": rounded_decimal(value),
+            "expectedAverageDays": rounded_decimal(overall_average),
+            "differenceFromAverage": rounded_decimal(difference),
+            "isAnomaly": is_anomaly,
+            "attentionStatus": "potential_anomaly" if is_anomaly else "past_stage_average" if value >= overall_average else "approaching_stage_average",
+        })
+
+    teams = [
+        {
+            "team": team,
+            "averageOnboardingDays": rounded_decimal(sum(values) / len(values)),
+            "partnerCount": len(values),
+        }
+        for team, values in sorted(team_values.items(), key=lambda item: item[0].casefold())
+        if values
+    ]
+    partners.sort(
+        key=lambda partner: (
+            not partner["isAnomaly"],
+            -(partner["differenceFromAverage"] or 0),
+            str(partner["partnerName"]).casefold(),
+        )
+    )
+
+    return {
+        "stages": [
+            {"label": stage.label, "durationColumn": stage.duration_column}
+            for stage in configuration.stages
+        ],
+        "selectedStage": selected_stage.label,
+        "overallAverageDays": rounded_decimal(overall_average),
+        "teams": teams,
+        "focusArea": {
+            "summary": {
+                "partnersNeedingAttention": attention_count,
+                "approachingStageAverage": approaching_average_count,
+                "potentialAnomalies": anomaly_count,
+                "partnersWithNames": len(partners),
+                "missingPartnerNames": missing_partner_names,
+            },
+            "partners": partners,
+        },
+        "anomalyRule": {
+            "method": "average_plus_one_standard_deviation",
+            "thresholdDays": rounded_decimal(anomaly_cutoff),
+        },
+        "dataQuality": selected_quality,
     }
 
 

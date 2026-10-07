@@ -439,6 +439,125 @@ function PipelineSection({ data, loading, error, onRetry, datasetLoaded }) {
     );
 }
 
+/* ─── Team Comparison ─────────────────────────────────────── */
+function TeamComparisonSection({ data, loading, error, onRetry, onStageChange, datasetLoaded }) {
+    const [detailsOpen, setDetailsOpen] = useState(false);
+
+    useEffect(() => setDetailsOpen(false), [data?.selectedStage]);
+
+    if (loading) {
+        return (
+            <section className="hn-team-comparison" aria-label="Team Comparison" aria-busy="true">
+                <div className="hn-team-comparison__header">
+                    <div><p className="hn-eyebrow">Team comparison</p><h2>Onboarding time by team</h2></div>
+                    <span className="hn-skeleton hn-skeleton--select" aria-hidden="true" />
+                </div>
+                <div className="hn-team-chart hn-team-chart--skeleton" aria-hidden="true">
+                    {[1, 2, 3, 4].map((bar) => <span key={bar} className="hn-skeleton hn-skeleton--bar" />)}
+                </div>
+            </section>
+        );
+    }
+
+    if (error) {
+        return (
+            <section className="hn-team-comparison" aria-label="Team Comparison">
+                <div className="hn-team-comparison__header"><div><p className="hn-eyebrow">Team comparison</p><h2>Onboarding time by team</h2></div></div>
+                <div className="hn-error-banner" role="alert">
+                    <span>Could not load team comparison: {error}</span>
+                    <button type="button" className="hn-retry-btn" onClick={onRetry}><RefreshCw size={13} /><span>Retry</span></button>
+                </div>
+            </section>
+        );
+    }
+
+    if (!datasetLoaded || !data) {
+        return (
+            <section className="hn-team-comparison" aria-label="Team Comparison">
+                <div className="hn-team-comparison__header"><div><p className="hn-eyebrow">Team comparison</p><h2>Onboarding time by team</h2></div></div>
+                <div className="hn-team-comparison__empty">Upload a dataset to compare onboarding time across teams.</div>
+            </section>
+        );
+    }
+
+    const teams = data.teams || [];
+    const partners = data.focusArea?.partners || [];
+    const focusSummary = data.focusArea?.summary || {};
+    const overallAverage = data.overallAverageDays;
+    const maxValue = Math.max(...teams.map((team) => team.averageOnboardingDays || 0), overallAverage || 0, 1);
+    const averagePosition = Math.min(100, Math.max(0, ((overallAverage || 0) / maxValue) * 100));
+    const days = (value) => value == null ? "—" : `${Number(value).toFixed(1)} days`;
+    const difference = (value) => value == null ? "—" : `${value > 0 ? "+" : ""}${Number(value).toFixed(1)} days`;
+
+    return (
+        <section className="hn-team-comparison" aria-label="Team Comparison">
+            <div className="hn-team-comparison__header">
+                <div>
+                    <p className="hn-eyebrow">Team comparison</p>
+                    <h2>Onboarding time by team</h2>
+                    <p>Average days for the selected stage. The benchmark is calculated across all tracked partners.</p>
+                </div>
+                <label className="hn-stage-filter">
+                    <span>Stage</span>
+                    <select value={data.selectedStage || ""} onChange={(event) => onStageChange(event.target.value)}>
+                        {(data.stages || []).map((stage) => <option key={stage.label} value={stage.label}>{stage.label}</option>)}
+                    </select>
+                    <ChevronDown size={15} aria-hidden="true" />
+                </label>
+            </div>
+
+            {teams.length > 0 ? (
+                <div className="hn-team-chart" role="img" aria-label={`Average onboarding days by team for ${data.selectedStage}`}>
+                    <div className="hn-team-chart__axis-title">Average onboarding days</div>
+                    <div className="hn-team-chart__content">
+                        <div className="hn-team-chart__plot">
+                            <div className="hn-team-chart__grid" aria-hidden="true"><span /><span /><span /><span /></div>
+                            {overallAverage != null && <div className="hn-team-chart__average" style={{ bottom: `${averagePosition}%` }}><span>Overall average · {days(overallAverage)}</span></div>}
+                            <div className="hn-team-chart__bars">
+                                {teams.map((team) => {
+                                    const height = Math.max(5, ((team.averageOnboardingDays || 0) / maxValue) * 100);
+                                    return (
+                                        <div className="hn-team-chart__bar-group" key={team.team}>
+                                            <span className="hn-team-chart__value">{days(team.averageOnboardingDays)}</span>
+                                            <div className="hn-team-chart__bar-track"><span className="hn-team-chart__bar" style={{ "--bar-height": `${height}%` }} /></div>
+                                            <span className="hn-team-chart__label" title={team.team}>{team.team}</span>
+                                            <span className="hn-team-chart__count">{team.partnerCount} partners</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="hn-team-chart__x-axis-title">Teams</div>
+                    </div>
+                </div>
+            ) : (
+                <div className="hn-team-comparison__empty">No valid onboarding-day values were found for this stage.</div>
+            )}
+
+            <section className="hn-focus-area" aria-labelledby="hn-focus-area-title">
+                <div className="hn-focus-area__header">
+                    <div><p className="hn-eyebrow">Focus area</p><h3 id="hn-focus-area-title">Partner follow-up</h3></div>
+                    <button type="button" className="hn-focus-area__toggle" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen}>
+                        <span>{detailsOpen ? "Show less" : "See more"}</span><ChevronDown size={16} className={detailsOpen ? "is-open" : ""} />
+                    </button>
+                </div>
+                <div className="hn-focus-area__summary">
+                    <div><strong>{focusSummary.partnersNeedingAttention ?? 0}</strong><span>partners needing attention</span></div>
+                    <div><strong>{focusSummary.approachingStageAverage ?? 0}</strong><span>approaching stage average</span></div>
+                    <div className="hn-focus-area__summary-warning"><strong>{focusSummary.potentialAnomalies ?? 0}</strong><span>potential anomalies</span></div>
+                </div>
+                {detailsOpen && (
+                    <div className="hn-focus-area__details" role="region" aria-label="Partner comparison details">
+                        {partners.length > 0 ? (
+                            <div className="hn-focus-area__table-wrap"><table><thead><tr><th>Partner</th><th>Team</th><th>Stuck at stage</th><th>Actual</th><th>Average</th><th>Difference</th><th>Onboarding status</th></tr></thead><tbody>{partners.map((partner, index) => <tr key={`${partner.partnerName}-${partner.team}-${index}`} className={partner.isAnomaly ? "is-anomaly" : ""}><td>{partner.partnerName}</td><td>{partner.team}</td><td>{partner.stuckAtStage}</td><td>{days(partner.actualOnboardingDays)}</td><td>{days(partner.expectedAverageDays)}</td><td>{difference(partner.differenceFromAverage)}</td><td><span className={`hn-partner-status ${partner.isAnomaly ? "is-anomaly" : ""}`}>{partner.isAnomaly ? "Potential anomaly" : partner.attentionStatus === "past_stage_average" ? "Past stage average" : "Approaching average"}</span></td></tr>)}</tbody></table></div>
+                        ) : <p className="hn-focus-area__none">No active, named partners need attention at this stage.</p>}
+                    </div>
+                )}
+            </section>
+        </section>
+    );
+}
+
 /* ─── Page Component ───────────────────────────────────────── */
 export default function HomePage() {
     const navigate = useNavigate();
@@ -457,6 +576,9 @@ export default function HomePage() {
     const [pipelineData, setPipelineData] = useState(null);
     const [pipelineLoading, setPipelineLoading] = useState(true);
     const [pipelineError, setPipelineError] = useState(null);
+    const [teamComparison, setTeamComparison] = useState(null);
+    const [teamComparisonLoading, setTeamComparisonLoading] = useState(true);
+    const [teamComparisonError, setTeamComparisonError] = useState(null);
 
     // Load active analysis summary from backend
     const loadSummary = useCallback(async () => {
@@ -518,6 +640,26 @@ export default function HomePage() {
         }
     }, []);
 
+    const loadTeamComparison = useCallback(async (stage) => {
+        setTeamComparisonLoading(true);
+        setTeamComparisonError(null);
+        try {
+            const query = stage ? `?${new URLSearchParams({ stage }).toString()}` : "";
+            const res = await fetch(`/api/team-comparison${query}`);
+            if (res.status === 404) {
+                setTeamComparison(null);
+                return;
+            }
+            if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+            setTeamComparison(await res.json());
+        } catch (err) {
+            console.error("Failed to load team comparison:", err);
+            setTeamComparisonError(err.message || "Failed to load team comparison");
+        } finally {
+            setTeamComparisonLoading(false);
+        }
+    }, []);
+
     // Initial load and handling navigation state from UploadPage
     useEffect(() => {
         if (location.state?.uploaded && location.state?.response) {
@@ -543,14 +685,16 @@ export default function HomePage() {
 
             // Refetch pipeline so it reflects the freshly uploaded dataset
             loadPipeline();
+            loadTeamComparison();
 
             // Clear navigation state so browser refresh doesn't trigger repeat notification
             window.history.replaceState({}, document.title);
         } else {
             loadSummary();
             loadPipeline();
+            loadTeamComparison();
         }
-    }, [location.state, loadSummary, loadPipeline]);
+    }, [location.state, loadSummary, loadPipeline, loadTeamComparison]);
 
     // Auto-dismiss toast after 6s
     useEffect(() => {
@@ -727,6 +871,15 @@ export default function HomePage() {
                     loading={pipelineLoading}
                     error={pipelineError}
                     onRetry={loadPipeline}
+                    datasetLoaded={datasetLoaded}
+                />
+
+                <TeamComparisonSection
+                    data={teamComparison}
+                    loading={teamComparisonLoading}
+                    error={teamComparisonError}
+                    onRetry={() => loadTeamComparison(teamComparison?.selectedStage)}
+                    onStageChange={loadTeamComparison}
                     datasetLoaded={datasetLoaded}
                 />
             </main>

@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from Agents.ExcelAnalyst.agent import run_excel_analyst_async
-from Backend.calculations import calculate_dataset, calculate_pipeline
+from Backend.calculations import calculate_dataset, calculate_pipeline, calculate_team_comparison
 
 
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
@@ -142,6 +142,24 @@ async def get_pipeline(request: Request) -> Dict[str, Any]:
         )
     filters = {key: value for key, value in request.query_params.items() if value}
     return calculate_pipeline(CURRENT_DATASET.dataframe, CURRENT_DATASET.agent_response, filters)
+
+
+@app.get("/api/team-comparison")
+async def get_team_comparison(stage: str | None = None) -> Dict[str, Any]:
+    """Return backend-owned team averages and partner focus data for one stage."""
+    if CURRENT_DATASET is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No dataset is loaded. Upload a CSV first.",
+        )
+    try:
+        return calculate_team_comparison(
+            CURRENT_DATASET.dataframe,
+            CURRENT_DATASET.agent_response,
+            stage_label=stage,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @app.get("/api/candidates")
