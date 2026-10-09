@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { fetchPipeline, fetchSummary, fetchTeamComparison } from "../services/dashboardApi";
+import { fetchPartners, fetchPipeline, fetchSummary, fetchTeamComparison } from "../services/dashboardApi";
 import { filterOnboardingRecords, getDisplayMetrics } from "../utils/filterOnboardingRecords";
 import { mapSummaryFromCalculations, mapSummaryFromKpis } from "../utils/mapSummaryFromKpis";
+
 
 function emptyDatasetState() {
     return {
@@ -30,6 +31,9 @@ export function useDashboardData() {
     const [teamComparison, setTeamComparison] = useState(null);
     const [teamComparisonLoading, setTeamComparisonLoading] = useState(true);
     const [teamComparisonError, setTeamComparisonError] = useState(null);
+    const [partnersData, setPartnersData] = useState(null);
+    const [partnersLoading, setPartnersLoading] = useState(true);
+    const [partnersError, setPartnersError] = useState(null);
 
     const applyLoadedDataset = useCallback((nextSummary, filename, nextRecords) => {
         setSummary(nextSummary);
@@ -45,7 +49,9 @@ export function useDashboardData() {
         setRecords(empty.records);
         setDatasetInfo(empty.datasetInfo);
         setDatasetLoaded(empty.datasetLoaded);
+        setPartnersData(null);
     }, []);
+
 
     const loadSummary = useCallback(async () => {
         setLoading(true);
@@ -95,6 +101,19 @@ export function useDashboardData() {
         }
     }, []);
 
+    const loadPartners = useCallback(async () => {
+        setPartnersLoading(true);
+        setPartnersError(null);
+        try {
+            setPartnersData(await fetchPartners());
+        } catch (err) {
+            console.error("Failed to load partners:", err);
+            setPartnersError(err.message || "Failed to load partners");
+        } finally {
+            setPartnersLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         if (location.state?.uploaded && location.state?.response) {
             const mapped = mapSummaryFromCalculations(location.state.response);
@@ -107,6 +126,7 @@ export function useDashboardData() {
             });
             loadPipeline();
             loadTeamComparison();
+            loadPartners();
             window.history.replaceState({}, document.title);
             return;
         }
@@ -114,7 +134,8 @@ export function useDashboardData() {
         loadSummary();
         loadPipeline();
         loadTeamComparison();
-    }, [location.state, loadSummary, loadPipeline, loadTeamComparison, applyLoadedDataset]);
+        loadPartners();
+    }, [location.state, loadSummary, loadPipeline, loadTeamComparison, loadPartners, applyLoadedDataset]);
 
     const filteredRecords = useMemo(
         () => filterOnboardingRecords(records, searchQuery),
@@ -146,9 +167,13 @@ export function useDashboardData() {
         teamComparison,
         teamComparisonLoading,
         teamComparisonError,
+        partnersData,
+        partnersLoading,
+        partnersError,
         loadSummary,
         loadPipeline,
         loadTeamComparison,
+        loadPartners,
         dismissToast,
     };
 }

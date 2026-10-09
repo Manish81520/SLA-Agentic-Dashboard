@@ -2,6 +2,7 @@ const SUMMARY_URL = "/api/summary";
 const PIPELINE_URL = "/api/pipeline";
 const TEAM_COMPARISON_URL = "/api/team-comparison";
 const FOCUS_AREA_URL = "/api/focus-area";
+const PARTNERS_URL = "/api/partners";
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -30,3 +31,8 @@ export function fetchTeamComparison(stage) {
 export function fetchFocusArea() {
     return fetchJson(FOCUS_AREA_URL);
 }
+
+export function fetchPartners() {
+    return fetchJson(PARTNERS_URL);
+}
+
