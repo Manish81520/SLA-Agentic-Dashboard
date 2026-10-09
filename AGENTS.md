@@ -19,3 +19,8 @@ change the Gemini model unless explicitly requested.
 - Preserve exact cleaned source headers in all mappings.
 - Never treat numeric SLA/duration values as dates based only on their header.
 - Require human confirmation for uncertain mappings and ambiguous date formats.
+
+## Comprehensive Guide
+
+For full system architecture, annotated file structure, API reference, and calculation rules, see [AI_CONTEXT.md](AI_CONTEXT.md).
+

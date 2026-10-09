@@ -7,7 +7,9 @@ import {
     ErrorBanner,
     FocusAreaSection,
     HomeNavBar,
+    PartnersListSection,
     PipelineSection,
+
     SearchFeedback,
     SummaryCards,
     TeamComparisonSection,
@@ -37,11 +39,16 @@ export default function HomePage() {
         teamComparison,
         teamComparisonLoading,
         teamComparisonError,
+        partnersData,
+        partnersLoading,
+        partnersError,
         loadSummary,
         loadPipeline,
         loadTeamComparison,
+        loadPartners,
         dismissToast,
     } = useDashboardData();
+
 
     useAutoDismiss(toast, dismissToast);
 
@@ -112,7 +119,16 @@ export default function HomePage() {
                 />
 
                 <FocusAreaSection />
+
+                <PartnersListSection
+                    data={partnersData}
+                    loading={partnersLoading}
+                    error={partnersError}
+                    onRetry={loadPartners}
+                    datasetLoaded={datasetLoaded}
+                />
             </main>
+
         </div>
     );
 }

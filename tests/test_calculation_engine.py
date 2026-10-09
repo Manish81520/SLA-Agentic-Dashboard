@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 
-from Backend.calculations import calculate_dataset, calculate_team_comparison
+from Backend.calculations import calculate_dataset, calculate_partners_list, calculate_team_comparison
 
 
 AGENT_MAPPING = {
@@ -147,3 +147,45 @@ class CalculationEngineTests(unittest.TestCase):
 
         self.assertEqual(comparison["focusArea"]["partners"], [])
         self.assertEqual(comparison["focusArea"]["summary"]["missingPartnerNames"], 1)
+
+    def test_calculate_partners_list_returns_all_partners_with_standardized_fields(self):
+        dataframe = pd.DataFrame({
+            "Worker ID": ["W-1", "W-2", "W-3"],
+            "Partner Name": ["Ava Patel", "Noah Smith", "Mia Chen"],
+            "Delivery Team": ["Alpha", "Alpha", "Beta"],
+            "Request Date": ["2026-01-01", "2026-01-01", "2026-01-01"],
+            "Completion Date": ["2026-01-10", "", "2026-01-09"],
+            "Verification SLA": [2, 4, 8],
+            "Verification Start": ["2026-01-01", "2026-01-01", "2026-01-01"],
+            "Verification End": ["2026-01-03", "2026-01-05", "2026-01-09"],
+            "Provisioning Start": ["2026-01-03", "2026-01-05", "2026-01-09"],
+            "Provisioning End": ["2026-01-05", "2026-01-08", "2026-01-13"],
+        })
+
+        result = calculate_partners_list(dataframe, AGENT_MAPPING, analysis_date=date(2026, 1, 10))
+
+        self.assertEqual(result["totalCount"], 3)
+        self.assertEqual(len(result["partners"]), 3)
+
+        # Sorted alphabetically by partnerName: Ava Patel, Mia Chen, Noah Smith
+        p0 = result["partners"][0]
+        self.assertEqual(p0["partnerName"], "Ava Patel")
+        self.assertEqual(p0["team"], "Alpha")
+        self.assertEqual(p0["currentStage"], "Completed")
+        self.assertEqual(p0["onboardingDays"], 9.0)
+        self.assertEqual(p0["status"], "Completed")
+
+        p1 = result["partners"][1]
+        self.assertEqual(p1["partnerName"], "Mia Chen")
+        self.assertEqual(p1["team"], "Beta")
+        self.assertEqual(p1["currentStage"], "Completed")
+        self.assertEqual(p1["onboardingDays"], 8.0)
+        self.assertEqual(p1["status"], "Completed")
+
+        p2 = result["partners"][2]
+        self.assertEqual(p2["partnerName"], "Noah Smith")
+        self.assertEqual(p2["team"], "Alpha")
+        self.assertEqual(p2["currentStage"], "Provisioning")
+        self.assertEqual(p2["onboardingDays"], 9.0)
+        self.assertEqual(p2["status"], "In progress")
+

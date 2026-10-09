@@ -729,3 +729,100 @@ def calculate_focus_area(
         },
     }
 
+
+def calculate_partners_list(
+    dataframe: pd.DataFrame,
+    agent_response: Dict[str, Any],
+    analysis_date: Optional[date] = None,
+) -> Dict[str, Any]:
+    """Return the complete list of all partners with standardized detail fields."""
+    normalized_dataframe = normalize_dataframe(dataframe)
+    configuration = configuration_from_agent(agent_response)
+    if not configuration.stages:
+        raise ValueError("ExcelAnalyst did not provide any stage mappings for calculation.")
+
+    group_column = _available_column(configuration.group_column, normalized_dataframe)
+    partner_name_column = _available_column(configuration.partner_name_column, normalized_dataframe)
+    identifier_column = _available_column(configuration.identifier_column, normalized_dataframe)
+    completion_column = _available_column(configuration.completion_column, normalized_dataframe)
+    onboarding_start_column = _available_column(configuration.onboarding_start_column, normalized_dataframe)
+
+    stage_values_map = {
+        stage.label: _stage_values(normalized_dataframe, stage)[0]
+        for stage in configuration.stages
+    }
+
+    today = analysis_date or date.today()
+    partners: List[Dict[str, Any]] = []
+
+    for position, (row_index, row) in enumerate(normalized_dataframe.iterrows(), start=1):
+        record_id = json_value(row[identifier_column]) if identifier_column else None
+        record_id = str(record_id).strip() if record_id is not None and str(record_id).strip() else str(position)
+
+        partner_value = json_value(row[partner_name_column]) if partner_name_column else None
+        partner_name = str(partner_value).strip() if partner_value is not None and str(partner_value).strip() else f"Partner {record_id}"
+
+        team_value = json_value(row[group_column]) if group_column else None
+        team = str(team_value).strip() if team_value is not None and str(team_value).strip() else "Unspecified"
+
+        is_complete = _is_complete(row, completion_column)
+        status = "Completed" if is_complete else "In progress"
+
+        if is_complete:
+            current_stage = "Completed"
+        else:
+            current_stage = next(
+                (
+                    s.label
+                    for s in reversed(configuration.stages)
+                    if pd.notna(stage_values_map[s.label].loc[row_index])
+                ),
+                configuration.stages[0].label,
+            )
+
+        onboarding_days: Optional[float] = None
+        start, _ = parse_iso_date(row[onboarding_start_column]) if onboarding_start_column else (None, "missing")
+        completion, _ = parse_iso_date(row[completion_column]) if completion_column else (None, "missing")
+
+        if is_complete:
+            if start is not None and completion is not None:
+                total_diff, _ = coerce_duration((completion - start).days)
+                onboarding_days = total_diff
+            else:
+                stage_vals = [stage_values_map[s.label].loc[row_index] for s in configuration.stages]
+                if all(pd.notna(v) for v in stage_vals):
+                    total_sum, _ = coerce_duration(float(sum(stage_vals)))
+                    onboarding_days = total_sum
+                else:
+                    valid_vals = [v for v in stage_vals if pd.notna(v)]
+                    if valid_vals:
+                        total_sum, _ = coerce_duration(float(sum(valid_vals)))
+                        onboarding_days = total_sum
+        else:
+            if start is not None:
+                start_date = start.date() if hasattr(start, "date") else start
+                today_date = today.date() if hasattr(today, "date") else today
+                elapsed, _ = coerce_duration(max((today_date - start_date).days, 0))
+                onboarding_days = elapsed
+            else:
+                active_val = stage_values_map[current_stage].loc[row_index] if current_stage in stage_values_map else None
+                if pd.notna(active_val):
+                    onboarding_days, _ = coerce_duration(float(active_val))
+
+        partners.append({
+            "partnerId": record_id,
+            "partnerName": partner_name,
+            "team": team,
+            "currentStage": current_stage,
+            "onboardingDays": rounded_decimal(onboarding_days),
+            "status": status,
+        })
+
+    partners.sort(key=lambda p: str(p["partnerName"]).casefold())
+
+    return {
+        "partners": partners,
+        "totalCount": len(partners),
+    }
+
+
