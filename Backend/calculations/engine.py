@@ -604,3 +604,128 @@ def calculate_pipeline(
         stage_stats[stage.label] = _stage_statistics(values)
 
     return calculate_pipeline_from_data(dataframe, configuration, stage_data, stage_stats)
+
+
+def calculate_focus_area(
+    dataframe: pd.DataFrame,
+    agent_response: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return partner-level focus data aggregated across every stage.
+
+    For each stage the same classification logic that
+    ``calculate_team_comparison`` uses is applied (same average, anomaly
+    cutoff, approaching threshold, completion check).  Partners that appear
+    in multiple stages are kept only once — the entry with the largest
+    ``differenceFromAverage`` wins so the most urgent signal surfaces.
+    """
+    normalized_dataframe = normalize_dataframe(dataframe)
+    configuration = configuration_from_agent(agent_response)
+    if not configuration.stages:
+        raise ValueError("ExcelAnalyst did not provide any stage mappings for comparison.")
+
+    group_column = _available_column(configuration.group_column, normalized_dataframe)
+    partner_name_column = _available_column(configuration.partner_name_column, normalized_dataframe)
+    completion_column = _available_column(configuration.completion_column, normalized_dataframe)
+
+    stage_values_map = {
+        stage.label: _stage_values(normalized_dataframe, stage)[0]
+        for stage in configuration.stages
+    }
+
+    # Deduplicate by (partnerName, team) keeping the most urgent entry.
+    best_partner: Dict[tuple, Dict[str, Any]] = {}
+    attention_count = 0
+    approaching_average_count = 0
+    anomaly_count = 0
+    missing_partner_names = 0
+
+    for stage in configuration.stages:
+        selected_values = stage_values_map[stage.label]
+        selected_stats = _stage_statistics(selected_values)
+        overall_average = selected_stats["average"]
+        anomaly_cutoff = selected_stats["anomalyCutoff"]
+        valid_indices = selected_values[selected_values.notna()].index
+
+        for row_index in valid_indices:
+            row = normalized_dataframe.loc[row_index]
+            value = float(selected_values.loc[row_index])
+            team_value = json_value(row[group_column]) if group_column else None
+            team = str(team_value).strip() if team_value is not None and str(team_value).strip() else "Unspecified"
+            partner_value = json_value(row[partner_name_column]) if partner_name_column else None
+            partner_name = str(partner_value).strip() if partner_value is not None and str(partner_value).strip() else None
+
+            current_stage = next(
+                (
+                    s.label
+                    for s in reversed(configuration.stages)
+                    if pd.notna(stage_values_map[s.label].loc[row_index])
+                ),
+                stage.label,
+            )
+            difference = None if overall_average is None else value - overall_average
+            is_complete = _is_complete(row, completion_column)
+            is_active_stage = current_stage == stage.label
+            approaching_threshold = None if overall_average is None else FOCUS_AREA_RATIO * overall_average
+            is_approaching = bool(
+                not is_complete
+                and is_active_stage
+                and approaching_threshold is not None
+                and value >= approaching_threshold
+            )
+            is_anomaly = bool(anomaly_cutoff is not None and value > anomaly_cutoff)
+
+            if not is_approaching:
+                continue
+
+            attention_count += 1
+            if value < overall_average:
+                approaching_average_count += 1
+            if is_anomaly:
+                anomaly_count += 1
+            if partner_name is None:
+                missing_partner_names += 1
+                continue
+
+            entry = {
+                "partnerName": partner_name,
+                "team": team,
+                "currentStage": current_stage,
+                "stuckAtStage": current_stage,
+                "onboardingStatus": "In progress",
+                "actualOnboardingDays": rounded_decimal(value),
+                "expectedAverageDays": rounded_decimal(overall_average),
+                "differenceFromAverage": rounded_decimal(difference),
+                "isAnomaly": is_anomaly,
+                "attentionStatus": (
+                    "potential_anomaly" if is_anomaly
+                    else "past_stage_average" if value >= overall_average
+                    else "approaching_stage_average"
+                ),
+            }
+            key = (partner_name, team)
+            existing = best_partner.get(key)
+            if existing is None or (difference is not None and (existing["differenceFromAverage"] is None or difference > existing["differenceFromAverage"])):
+                best_partner[key] = entry
+
+    partners = list(best_partner.values())
+    partners.sort(
+        key=lambda partner: (
+            not partner["isAnomaly"],
+            -(partner["differenceFromAverage"] or 0),
+            str(partner["partnerName"]).casefold(),
+        )
+    )
+
+    return {
+        "focusArea": {
+            "summary": {
+                "partnersNeedingAttention": attention_count,
+                "approachingStageAverage": approaching_average_count,
+                "potentialAnomalies": anomaly_count,
+                "partnersWithNames": len(partners),
+                "missingPartnerNames": missing_partner_names,
+            },
+            "partners": partners,
+        },
+    }
+
