@@ -23,6 +23,7 @@ class CalculationConfiguration:
     """All source-field dependencies selected by ExcelAnalyst."""
 
     identifier_column: Optional[str]
+    partner_name_column: Optional[str]
     group_column: Optional[str]
     onboarding_start_column: Optional[str]
     completion_column: Optional[str]
@@ -92,6 +93,7 @@ def configuration_from_agent(agent_response: Dict[str, Any]) -> CalculationConfi
 
     return CalculationConfiguration(
         identifier_column=_mapping_column(agent_response.get("identifier_mapping")),
+        partner_name_column=_mapping_column(agent_response.get("partner_name_mapping")),
         group_column=_mapping_column(agent_response.get("project_mapping")),
         onboarding_start_column=_mapping_column(agent_response.get("onboarding_start_mapping")),
         completion_column=_mapping_column(agent_response.get("onboarding_completion_mapping")),

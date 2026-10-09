@@ -112,6 +112,10 @@ class DatasetUnderstanding(BaseModel):
     identifier_mapping: ColumnMapping = Field(
         description="Proposed primary identifier-column mapping",
     )
+    partner_name_mapping: Optional[ColumnMapping] = Field(
+        default=None,
+        description="Proposed human-readable partner/person name column mapping, or null when no reliable mapping exists",
+    )
     project_mapping: Optional[ColumnMapping] = Field(
         default=None,
         description="Proposed project, team, or account-assignment column mapping",

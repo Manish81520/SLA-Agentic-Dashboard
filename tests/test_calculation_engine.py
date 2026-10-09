@@ -3,11 +3,12 @@ from datetime import date
 
 import pandas as pd
 
-from Backend.calculations import calculate_dataset
+from Backend.calculations import calculate_dataset, calculate_team_comparison
 
 
 AGENT_MAPPING = {
     "identifier_mapping": {"column": "Worker ID"},
+    "partner_name_mapping": {"column": "Partner Name"},
     "project_mapping": {"column": "Delivery Team"},
     "onboarding_start_mapping": {"column": "Request Date"},
     "onboarding_completion_mapping": {"column": "Completion Date"},
@@ -32,6 +33,7 @@ class CalculationEngineTests(unittest.TestCase):
     def test_calculates_mapped_durations_aggregates_anomalies_and_forecasts(self):
         dataframe = pd.DataFrame({
             "Worker ID": ["W-1", "W-2", "W-3"],
+            "Partner Name": ["Ava Patel", "Noah Smith", "Mia Chen"],
             "Delivery Team": ["Alpha", "Alpha", "Beta"],
             "Request Date": ["2026-01-01", "2026-01-01", "2026-01-01"],
             "Completion Date": ["2026-01-10", "", "2026-01-09"],
@@ -102,3 +104,46 @@ class CalculationEngineTests(unittest.TestCase):
         self.assertEqual(result["stages"][0]["dataQuality"]["invalid_date"], 1)
         self.assertEqual(result["stages"][0]["dataQuality"]["outside_plausible_range"], 1)
         self.assertEqual(result["focusAreas"], [])
+
+    def test_team_comparison_uses_dynamic_stage_team_and_partner_mappings(self):
+        dataframe = pd.DataFrame({
+            "Worker ID": ["W-1", "W-2", "W-3"],
+            "Partner Name": ["Ava Patel", "Noah Smith", "Mia Chen"],
+            "Delivery Team": ["Alpha", "Alpha", "Beta"],
+            "Verification SLA": [2, 4, 8],
+            "Provisioning Start": ["2026-01-01", "2026-01-01", "2026-01-01"],
+            "Provisioning End": ["2026-01-02", "2026-01-04", "2026-01-07"],
+        })
+
+        comparison = calculate_team_comparison(dataframe, AGENT_MAPPING, "Provisioning")
+
+        self.assertEqual(comparison["selectedStage"], "Provisioning")
+        self.assertEqual(comparison["overallAverageDays"], 3.3)
+        self.assertEqual(
+            comparison["teams"],
+            [
+                {"team": "Alpha", "averageOnboardingDays": 2.0, "partnerCount": 2},
+                {"team": "Beta", "averageOnboardingDays": 6.0, "partnerCount": 1},
+            ],
+        )
+        self.assertEqual(comparison["focusArea"]["summary"]["partnersNeedingAttention"], 2)
+        self.assertEqual(comparison["focusArea"]["summary"]["potentialAnomalies"], 1)
+        self.assertEqual(comparison["focusArea"]["partners"][0]["partnerName"], "Mia Chen")
+        self.assertEqual(comparison["focusArea"]["partners"][0]["stuckAtStage"], "Provisioning")
+        self.assertTrue(comparison["focusArea"]["partners"][0]["isAnomaly"])
+
+        with self.assertRaisesRegex(ValueError, "requested stage"):
+            calculate_team_comparison(dataframe, AGENT_MAPPING, "Missing stage")
+
+    def test_team_comparison_does_not_substitute_identifier_for_missing_partner_name(self):
+        dataframe = pd.DataFrame({
+            "Worker ID": ["internal-1", "internal-2"],
+            "Delivery Team": ["Alpha", "Beta"],
+            "Verification SLA": [4, 8],
+        })
+        mapping_without_names = {key: value for key, value in AGENT_MAPPING.items() if key != "partner_name_mapping"}
+
+        comparison = calculate_team_comparison(dataframe, mapping_without_names, "Verification")
+
+        self.assertEqual(comparison["focusArea"]["partners"], [])
+        self.assertEqual(comparison["focusArea"]["summary"]["missingPartnerNames"], 1)

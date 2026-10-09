@@ -18,7 +18,7 @@ workflows and naming conventions.
 Given the extracted schema, columns, data types, sample values, row statistics, and
 cleaning report, identify:
    - What the dataset represents and the entity being onboarded.
-   - A primary identifier mapping, a project mapping where present, and overall onboarding start/completion mappings.
+   - A primary identifier mapping, a human-readable partner/person name mapping where present, a project mapping where present, and overall onboarding start/completion mappings.
    - All onboarding stages in logical order, with explicit start, end, and existing duration-column mappings where present.
    - For every detected onboarding substage, assign its `main_stage_mapping` to exactly one of the three fixed main pipeline stages based only on supplied metadata:
      1. `resource_fulfilment_to_identification` ("Resource Fulfilment to Identification"): Sourcing, resourcing requests, candidate identification, initial profile screening, and requirements initiation.
