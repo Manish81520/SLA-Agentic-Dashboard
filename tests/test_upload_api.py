@@ -5,9 +5,13 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 
 from Backend.main import MAX_UPLOAD_SIZE_BYTES, process_csv_upload
+from fixtures import fresh_db
 
 
 class UploadApiTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        fresh_db()
+
     async def test_process_csv_upload_returns_agent_response(self):
         received_path = None
 

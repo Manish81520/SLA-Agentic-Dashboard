@@ -53,6 +53,7 @@ export default function HomePage() {
     useAutoDismiss(toast, dismissToast);
 
     const handleUpload = useCallback(() => navigate("/upload"), [navigate]);
+    const handleManage = useCallback(() => navigate("/partners/manage"), [navigate]);
     const handleExport = useCallback(() => {
         exportDatasetCsv(records, datasetInfo, summary);
     }, [records, datasetInfo, summary]);
@@ -64,6 +65,7 @@ export default function HomePage() {
                 onSearchChange={setSearchQuery}
                 onUpload={handleUpload}
                 onExport={handleExport}
+                onManage={handleManage}
                 hasData={records.length > 0}
             />
 

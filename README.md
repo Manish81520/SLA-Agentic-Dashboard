@@ -65,6 +65,19 @@ For an agent-processing error, check the backend terminal. The API returns a
 JSON error message after the agent finishes or fails; it does not require the
 frontend to wait through a separate polling step.
 
+## Database
+
+The default database is SQLite at `Data/workspace/onboarding.db`. Set
+`DATABASE_URL` to use another SQLAlchemy-compatible database URL. Run
+`.venv/bin/alembic upgrade head` to migrate it; API startup runs this migration
+automatically. Re-uploading creates a new active dataset and retains older
+datasets in the database as inactive history.
+
+## Manage partners
+
+Open `/partners/manage` after uploading a CSV to add or edit partners. The
+dashboard recalculates from the persisted dataset after every saved change.
+
 ## Generic calculation engine
 
 The backend calculation engine is deliberately independent of source headers.

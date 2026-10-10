@@ -1,8 +1,8 @@
 import React from "react";
-import { ArrowUpFromLine, BarChart3, Download } from "lucide-react";
+import { ArrowUpFromLine, BarChart3, Download, Users } from "lucide-react";
 import { ExpandingSearch } from "./ExpandingSearch";
 
-export function HomeNavBar({ searchQuery, onSearchChange, onUpload, onExport, hasData }) {
+export function HomeNavBar({ searchQuery, onSearchChange, onUpload, onExport, onManage, hasData }) {
     return (
         <header className="hn-nav" role="banner">
             <div className="hn-nav__inner">
@@ -27,6 +27,7 @@ export function HomeNavBar({ searchQuery, onSearchChange, onUpload, onExport, ha
                         <Download size={14} strokeWidth={2} />
                         <span>Export</span>
                     </button>
+                    <button type="button" id="hn-manage-btn" className="hn-btn hn-btn--ghost" onClick={onManage} aria-label="Manage partners" title="Add or edit partners"><Users size={14} strokeWidth={2} /><span>Manage</span></button>
 
                     <button
                         type="button"

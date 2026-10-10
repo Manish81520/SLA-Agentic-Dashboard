@@ -4,5 +4,6 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .pytest_cache/
+Data/workspace/
 FrontEnd/node_modules/
 FrontEnd/dist/
