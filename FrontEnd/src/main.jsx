@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import HomePage from "./pages/HomePage";
 import UploadPage from "./pages/UploadPage";
 import PartnersManagePage from "./pages/PartnersManagePage";
+import PartnerFormPage from "./pages/PartnerFormPage";
 import "./index.css";
 
 function ResultPage() {
@@ -38,6 +39,8 @@ function App() {
       <Route path="/upload" element={<UploadPage />} />
       <Route path="/result" element={<ResultPage />} />
       <Route path="/partners/manage" element={<PartnersManagePage />} />
+      <Route path="/partners/manage/new" element={<PartnerFormPage mode="add" />} />
+      <Route path="/partners/manage/:rowId" element={<PartnerFormPage mode="edit" />} />
       {/* Catch-all */}
       <Route path="*" element={<Navigate replace to="/home" />} />
     </Routes>

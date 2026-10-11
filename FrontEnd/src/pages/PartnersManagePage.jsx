@@ -1,24 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, BarChart3, Layers3, UserPlus, UsersRound } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { DashboardToast, ErrorBanner, SearchFeedback } from "../components/home";
 import { ExpandingSearch } from "../components/home/ExpandingSearch";
-import { PartnerFormDrawer, PartnerTable } from "../components/partners";
+import { PartnerTable } from "../components/partners";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
-import { useDrawerPresence } from "../hooks/useDrawerPresence";
 import { usePartnerManager } from "../hooks/usePartnerManager";
 import "./HomePage.css";
 import "./PartnersManagePage.css";
 
 export default function PartnersManagePage() {
     const navigate = useNavigate();
-    const { schema, rows, loading, error, datasetLoaded, reload, create, update } = usePartnerManager();
+    const location = useLocation();
+    const { schema, rows, loading, error, datasetLoaded, reload } = usePartnerManager();
     const [query, setQuery] = useState("");
-    const [context, setContext] = useState(null);
-    const [toast, setToast] = useState(null);
-    const [flashId, setFlashId] = useState(null);
-    const lastFocused = useRef(null);
-    const drawer = useDrawerPresence();
+    const [toast, setToast] = useState(() => (location.state?.toast ? { message: location.state.toast } : null));
+    const [flashId, setFlashId] = useState(() => location.state?.flashRowId ?? null);
+
+    useEffect(() => {
+        if (location.state?.toast || location.state?.flashRowId) navigate(location.pathname, { replace: true, state: null });
+    }, []); // clear the one-shot state so a refresh does not replay the toast
 
     useAutoDismiss(toast, () => setToast(null));
 
@@ -39,21 +40,8 @@ export default function PartnersManagePage() {
         return () => clearTimeout(timer);
     }, [flashId, rows]);
 
-    const openDrawer = (mode, row = null) => {
-        lastFocused.current = document.activeElement;
-        setContext({ mode, row });
-        drawer.show();
-    };
-    const closeDrawer = () => {
-        drawer.hide();
-        window.setTimeout(() => lastFocused.current?.focus?.(), 380);
-    };
-    const save = async (fields) => {
-        const result = context.mode === "add" ? await create(fields) : await update(context.row.rowId, fields);
-        closeDrawer();
-        setToast({ message: context.mode === "add" ? "Partner added" : "Partner updated" });
-        setFlashId(result.rowId);
-    };
+    const openAdd = () => navigate("/partners/manage/new");
+    const openEdit = (row) => navigate(`/partners/manage/${row.rowId}`);
 
     return (
         <div className="hn-page pm-page">
@@ -62,7 +50,7 @@ export default function PartnersManagePage() {
                     <div className="hn-nav__brand"><span className="hn-nav__brand-icon"><BarChart3 size={15} /></span><span>Onboarding</span></div>
                     <nav className="hn-nav__actions" aria-label="Partner actions">
                         <ExpandingSearch value={query} onChange={setQuery} />
-                        <button type="button" className="hn-btn hn-btn--primary" disabled={!schema} onClick={() => openDrawer("add")}>
+                        <button type="button" className="hn-btn hn-btn--primary" disabled={!schema} onClick={openAdd}>
                             <UserPlus size={15} strokeWidth={2.3} /><span>Add partner</span>
                         </button>
                     </nav>
@@ -80,10 +68,9 @@ export default function PartnersManagePage() {
                 {datasetLoaded && <SearchFeedback query={query} matchCount={filtered.length} totalCount={rows.length} />}
                 <section className="pm-card" aria-label="Partners">
                     <header className="pm-card__header"><div><p className="pm-card__eyebrow">Directory</p><h2>{query ? "Search results" : "All partners"}</h2></div>{datasetLoaded && <span className="pm-card__count"><Layers3 size={14} /> {filtered.length} shown</span>}</header>
-                    {loading ? <div className="pm-loading" aria-label="Loading partners"><span /><span /><span /><span /><span /></div> : !datasetLoaded ? <div className="pm-empty"><p>No dataset yet. Upload a CSV to start managing partners.</p><button className="hn-btn hn-btn--primary" onClick={() => navigate("/upload")}>Upload CSV</button></div> : filtered.length === 0 ? <div className="pm-empty"><p>{query ? `No partners match “${query}”.` : "No partners found."}</p></div> : <PartnerTable rows={filtered} flashRowId={flashId} onEdit={(row) => openDrawer("edit", row)} identifierKey={schema.identifierKey} />}
+                    {loading ? <div className="pm-loading" aria-label="Loading partners"><span /><span /><span /><span /><span /></div> : !datasetLoaded ? <div className="pm-empty"><p>No dataset yet. Upload a CSV to start managing partners.</p><button className="hn-btn hn-btn--primary" onClick={() => navigate("/upload")}>Upload CSV</button></div> : filtered.length === 0 ? <div className="pm-empty"><p>{query ? `No partners match “${query}”.` : "No partners found."}</p></div> : <PartnerTable rows={filtered} flashRowId={flashId} onEdit={openEdit} identifierKey={schema.identifierKey} />}
                 </section>
             </main>
-            {drawer.mounted && context && <PartnerFormDrawer key={`${context.mode}:${context.row?.rowId || "new"}`} schema={schema} mode={context.mode} row={context.row} open={drawer.open} onSubmit={save} onClose={closeDrawer} />}
         </div>
     );
 }
