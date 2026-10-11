@@ -810,6 +810,7 @@ def calculate_partners_list(
                     onboarding_days, _ = coerce_duration(float(active_val))
 
         partners.append({
+            "rowId": int(row_index),
             "partnerId": record_id,
             "partnerName": partner_name,
             "team": team,
@@ -824,5 +825,4 @@ def calculate_partners_list(
         "partners": partners,
         "totalCount": len(partners),
     }
-
 

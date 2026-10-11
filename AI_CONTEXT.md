@@ -37,7 +37,9 @@ Onboarding_agentic_dashboard/
 │
 ├── Backend/                          # FastAPI server & deterministic calculation engine
 │   ├── __init__.py
-│   ├── main.py                       # FastAPI application, route definitions, in-memory state
+│   ├── main.py                       # FastAPI application and persisted-dataset routes
+│   ├── db/                           # SQLAlchemy models, sessions, migrations, repository
+│   └── records/                      # Partner schema derivation, validation, and write service
 │   ├── pipeline_config.py            # Definitions for standard 3-step pipeline rollup
 │   └── calculations/
 │       ├── __init__.py               # Exports calculation functions
@@ -71,9 +73,13 @@ Onboarding_agentic_dashboard/
 │       ├── hooks/
 │       │   ├── useAutoDismiss.js     # Hook to auto-clear notifications after a timeout
 │       │   └── useDashboardData.js   # Master state hook fetching summary, pipeline, teams, partners
+│       │   ├── usePartnerManager.js  # Manage-partners API state and refresh logic
+│       │   └── useDrawerPresence.js  # Drawer mount/presence transitions
 │       ├── pages/
 │       │   ├── HomePage.jsx          # Main dashboard view assembling all section components
 │       │   ├── HomePage.css          # Glassmorphism styling and responsive design tokens
+│       │   ├── PartnersManagePage.jsx # Partner add/edit page
+│       │   └── PartnersManagePage.css # Partner-management styling
 │       │   ├── UploadPage.jsx        # Drag-and-drop CSV upload and review flow
 │       │   └── UploadPage.css        # Upload page specific styles
 │       ├── services/
@@ -128,7 +134,7 @@ flowchart TD
    - Team comparisons grouped by delivery team.
    - Focus areas: in-progress partners whose current stage duration is $\ge 75\%$ of stage average or flagged as anomalies.
    - Partners list: complete standardized list of all partners across all stages.
-5. **Caching**: Dataset and calculations are held in-memory in `CURRENT_DATASET` for fast querying across dashboard endpoints.
+5. **Persistence and caching**: Uploaded data and mappings are stored in SQL via `Backend/db/`; calculation DataFrames are loaded from the active dataset and cached per database generation and revision.
 6. **Frontend Display**: React dashboard fetches modular sections independently via REST endpoints and renders them with loading skeletons and error retries.
 
 ---
@@ -139,12 +145,16 @@ All endpoints are hosted under `http://localhost:8000/api`:
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/upload` | Upload CSV, run agent mapping, calculate dataset, cache in memory, return results. |
+| `POST` | `/api/upload` | Upload CSV, run agent mapping, calculate dataset, persist a new active dataset, return results. |
 | `GET` | `/api/summary` | Returns high-level dashboard KPIs, configuration, and records list. |
 | `GET` | `/api/pipeline` | Returns the 3-phase roll-up pipeline with substage metrics and averages. |
 | `GET` | `/api/team-comparison` | Returns team-by-team averages and partner counts for a given stage (query param: `?stage=...`). |
 | `GET` | `/api/focus-area` | Returns partners needing attention (approaching stage average or potential anomalies). |
 | `GET` | `/api/partners` | Returns the complete standardized list of all partners (name, team, current stage, days, status). |
+| `GET` | `/api/partners/schema` | Returns editable fields, sections, mappings, and warnings for the active dataset. |
+| `GET` | `/api/partners/rows` | Returns persisted partner rows plus backend-derived status and stage values. |
+| `POST` | `/api/partners` | Adds a validated partner record. |
+| `PATCH` | `/api/partners/{row_id}` | Updates validated editable fields on a partner record. |
 | `GET` | `/api/candidates` | Returns raw column headers and full record-level rows. |
 | `GET` | `/api/dataset-info` | Returns active dataset metadata (filename, rowCount). |
 | `GET` | `/api/health` | Readiness probe returning `{"status": "ok"}`. |
@@ -152,6 +162,8 @@ All endpoints are hosted under `http://localhost:8000/api`:
 ---
 
 ## 5. Calculation Engine Rules (`Backend/calculations/engine.py`)
+
+The engine reads a calculation DataFrame reconstructed from the active persisted database dataset. Partner-list responses include the database `rowId` for stable edit targeting.
 
 - **Duration Prioritization**:
   - If a stage has a `duration_column` with numeric values, that value is used directly (`source: "provided_duration"`).
@@ -193,6 +205,7 @@ All endpoints are hosted under `http://localhost:8000/api`:
 4. **Scope Control**: This is a local-first learning project. Do not introduce cloud deployment tools, Docker/Kubernetes, CI/CD pipelines, or switch the Gemini model unless explicitly requested by the user.
 5. **No Ad-Hoc CSS Frameworks**: Do not install or introduce TailwindCSS or component libraries unless explicitly requested. Use existing Vanilla CSS patterns in `HomePage.css`.
 6. **Backward Compatibility**: When adding or updating sections, ensure existing sections (`PipelineSection`, `TeamComparisonSection`, `FocusAreaSection`) continue to function without unintended side effects.
+7. **Record edits**: Partner edits operate on plain dictionaries, never by modifying a pandas DataFrame. Status is derived solely from the completion date, and stored dates use `YYYY-MM-DD`.
 
 ---
 
